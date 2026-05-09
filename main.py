@@ -89,6 +89,34 @@ async def on_ready():
     except Exception as error:
         print(f"Failed to sync slash commands: {type(error).__name__}: {error}")
 
+@bot.event
+async def on_voice_state_update(member, before, after):
+    if before.channel is None:
+        return
+
+    channel = before.channel
+
+    if not isinstance(channel, discord.VoiceChannel):
+        return
+
+    if channel.category_id != radioCategoryId:
+        return
+
+    if not channel.name.startswith("cipher-"):
+        return
+
+    if len(channel.members) > 0:
+        return
+
+    try:
+        await channel.delete(reason="Radio frequency empty")
+        print(f"Deleted empty radio channel: {channel.name}")
+    except discord.NotFound:
+        pass
+    except discord.Forbidden:
+        print(f"Missing permissions to delete channel: {channel.name}")
+    except Exception as error:
+        print(f"Failed to delete channel {channel.name}: {type(error).__name__}: {error}")
 
 @bot.tree.command(name="freq", description="Create or join a radio frequency")
 @app_commands.describe(
