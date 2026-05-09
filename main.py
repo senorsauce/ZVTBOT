@@ -61,16 +61,15 @@ def getRadioChannelName(frequency: str) -> str:
 
 
 def isRadioChannel(channel: discord.abc.GuildChannel | None) -> bool:
-    if not isinstance(channel, discord.VoiceChannel):
-        return False
+    return (
+        isinstance(channel, discord.VoiceChannel)
+        and channel.category_id == radioCategoryId
+        and channel.name.startswith("Freq: ")
+    )
 
-    if channel.category_id != radioCategoryId:
-        return False
 
-    if not channel.name.startswith("Freq: "):
-        return False
-
-    return True
+async def sendPrivate(interaction: discord.Interaction, message: str) -> None:
+    await interaction.followup.send(message, ephemeral=True)
 
 
 async def findRadioChannel(
@@ -102,10 +101,8 @@ def getLockedOverwrites(
         )
     }
 
-    botMember = guild.me
-
-    if botMember is not None:
-        overwrites[botMember] = discord.PermissionOverwrite(
+    if guild.me is not None:
+        overwrites[guild.me] = discord.PermissionOverwrite(
             view_channel=True,
             connect=True,
             manage_channels=True,
@@ -113,6 +110,22 @@ def getLockedOverwrites(
         )
 
     return overwrites
+
+
+def botCanManageChannel(channel: discord.abc.GuildChannel, guild: discord.Guild) -> bool:
+    if guild.me is None:
+        return False
+
+    permissions = channel.permissions_for(guild.me)
+    return permissions.manage_channels
+
+
+def botCanMoveMembers(channel: discord.abc.GuildChannel, guild: discord.Guild) -> bool:
+    if guild.me is None:
+        return False
+
+    permissions = channel.permissions_for(guild.me)
+    return permissions.move_members
 
 
 async def allowMemberIntoChannel(
@@ -170,7 +183,7 @@ async def deleteChannelAfterDelay(channelId: int, guildId: int) -> None:
         return
 
     except discord.Forbidden:
-        print(f"Missing permissions to delete channel ID: {channelId}")
+        print(f"Missing Manage Channels permission to delete channel ID: {channelId}")
 
     except Exception as error:
         print(f"Failed to delete channel ID {channelId}: {type(error).__name__}: {error}")
@@ -220,11 +233,9 @@ async def on_ready():
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    # If someone joins or moves into a radio channel, cancel its pending delete.
     if isRadioChannel(after.channel):
         cancelDeleteTask(after.channel.id)
 
-    # If someone leaves or moves out of a radio channel, schedule deletion if empty.
     if isRadioChannel(before.channel):
         scheduleDeleteIfEmpty(before.channel)
 
@@ -253,43 +264,51 @@ async def freq(
     member = interaction.user
 
     if guild is None:
-        await interaction.followup.send("Server only.", ephemeral=True)
+        await sendPrivate(interaction, "Server only.")
         return
 
     if not isinstance(member, discord.Member):
-        await interaction.followup.send("Member info unavailable.", ephemeral=True)
+        await sendPrivate(interaction, "Member info unavailable.")
         return
 
     setupChannel = guild.get_channel(setupChannelId)
     radioCategory = guild.get_channel(radioCategoryId)
 
     if not isinstance(setupChannel, discord.VoiceChannel):
-        await interaction.followup.send("Setup channel misconfigured.", ephemeral=True)
+        await sendPrivate(interaction, "Setup channel misconfigured.")
         return
 
     if not isinstance(radioCategory, discord.CategoryChannel):
-        await interaction.followup.send("Radio category misconfigured.", ephemeral=True)
+        await sendPrivate(interaction, "Radio category misconfigured.")
         return
 
     if member.voice is None or member.voice.channel is None:
-        await interaction.followup.send(f"Join `{setupChannel.name}` first.", ephemeral=True)
+        await sendPrivate(interaction, f"Join `{setupChannel.name}` first.")
         return
 
     if member.voice.channel.id != setupChannelId:
-        await interaction.followup.send(f"Join `{setupChannel.name}` first.", ephemeral=True)
+        await sendPrivate(interaction, f"Join `{setupChannel.name}` first.")
         return
 
     cleanedFrequency = cleanFrequency(frequency)
 
     if cleanedFrequency is None:
-        await interaction.followup.send("Invalid frequency.", ephemeral=True)
+        await sendPrivate(interaction, "Invalid frequency.")
         return
 
     radioChannel = await findRadioChannel(radioCategory, cleanedFrequency)
 
     if action.value == "create":
         if radioChannel is not None:
-            await interaction.followup.send("Frequency already exists.", ephemeral=True)
+            await sendPrivate(interaction, "Frequency already exists.")
+            return
+
+        if not botCanManageChannel(radioCategory, guild):
+            await sendPrivate(interaction, "Bot needs `Manage Channels` in the radio category.")
+            return
+
+        if not botCanMoveMembers(setupChannel, guild):
+            await sendPrivate(interaction, "Bot needs `Move Members` in the setup channel.")
             return
 
         channelName = getRadioChannelName(cleanedFrequency)
@@ -303,37 +322,47 @@ async def freq(
             )
 
             await member.move_to(radioChannel)
-            await interaction.followup.send("Created. Moving you.", ephemeral=True)
+            await sendPrivate(interaction, "Created. Moving you.")
+            return
 
         except discord.Forbidden:
-            await interaction.followup.send("Bot is missing permission.", ephemeral=True)
+            await sendPrivate(interaction, "Bot lacks permission to create or move.")
+            return
 
         except Exception as error:
             print(f"Create failed: {type(error).__name__}: {error}")
-            await interaction.followup.send("Create failed.", ephemeral=True)
-
-        return
+            await sendPrivate(interaction, "Create failed.")
+            return
 
     if action.value == "join":
         if radioChannel is None:
-            await interaction.followup.send("Frequency not found.", ephemeral=True)
+            await sendPrivate(interaction, "Frequency not found.")
+            return
+
+        if not botCanManageChannel(radioChannel, guild):
+            await sendPrivate(interaction, "Bot needs `Manage Channels` for this frequency.")
+            return
+
+        if not botCanMoveMembers(setupChannel, guild):
+            await sendPrivate(interaction, "Bot needs `Move Members` in the setup channel.")
             return
 
         try:
             await allowMemberIntoChannel(radioChannel, member)
             await member.move_to(radioChannel)
-            await interaction.followup.send("Moving you.", ephemeral=True)
+            await sendPrivate(interaction, "Moving you.")
+            return
 
         except discord.Forbidden:
-            await interaction.followup.send("Bot is missing permission.", ephemeral=True)
+            await sendPrivate(interaction, "Bot lacks permission to add you or move you.")
+            return
 
         except Exception as error:
             print(f"Join failed: {type(error).__name__}: {error}")
-            await interaction.followup.send("Join failed.", ephemeral=True)
+            await sendPrivate(interaction, "Join failed.")
+            return
 
-        return
-
-    await interaction.followup.send("Unknown action.", ephemeral=True)
+    await sendPrivate(interaction, "Unknown action.")
 
 
 bot.run(token)
