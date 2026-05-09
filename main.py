@@ -4,6 +4,8 @@ from discord import app_commands
 from discord.ext import commands
 
 token = os.getenv("DISCORD_TOKEN")
+setupChannelId = int(os.getenv("SETUP_CHANNEL_ID"))
+radioCategoryId = int(os.getenv("RADIO_CATEGORY_ID"))
 
 intents = discord.Intents.default()
 intents.voice_states = True
@@ -38,10 +40,32 @@ async def freq(
     action: app_commands.Choice[str],
     frequency: str
 ):
+    guild = interaction.guild
+
+    setupChannel = guild.get_channel(setupChannelId)
+    radioCategory = guild.get_channel(radioCategoryId)
+
+    if setupChannel is None:
+        await interaction.response.send_message(
+            "Setup channel could not be found. Check SETUP_CHANNEL_ID in Railway.",
+            ephemeral=True
+        )
+        return
+
+    if radioCategory is None:
+        await interaction.response.send_message(
+            "Radio category could not be found. Check RADIO_CATEGORY_ID in Railway.",
+            ephemeral=True
+        )
+        return
+
     await interaction.response.send_message(
-        f"Received request to `{action.value}` frequency `{frequency}`.",
+        f"Config check passed.\n"
+        f"Setup channel: `{setupChannel.name}`\n"
+        f"Radio category: `{radioCategory.name}`\n"
+        f"Action: `{action.value}`\n"
+        f"Frequency: `{frequency}`",
         ephemeral=True
     )
-
 
 bot.run(token)
