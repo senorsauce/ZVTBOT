@@ -141,13 +141,13 @@ def cancelDeleteTask(channelId: int) -> None:
 
 async def deleteChannelAfterDelay(channel: discord.VoiceChannel) -> None:
     try:
-        await asyncio.sleep(10)
+        await asyncio.sleep(30)
 
-        # Re-check after 10 seconds.
+        # Re-check after 30 seconds.
         if len(channel.members) > 0:
             return
 
-        await channel.delete(reason="Radio frequency empty for 10 seconds")
+        await channel.delete(reason="Radio frequency empty for 30 seconds")
         print(f"Deleted empty radio channel: {channel.name}")
 
     except asyncio.CancelledError:
@@ -209,7 +209,7 @@ async def on_voice_state_update(member, before, after):
         cancelDeleteTask(after.channel.id)
 
     # Someone left or moved out of a radio channel.
-    # If it is now empty, start the 10-second delete timer.
+    # If it is now empty, start the 30-second delete timer.
     if isRadioChannel(before.channel):
         scheduleDeleteIfEmpty(before.channel)
 
