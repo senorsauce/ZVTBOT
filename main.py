@@ -41,6 +41,7 @@ async def freq(
     frequency: str
 ):
     guild = interaction.guild
+    member = interaction.user
 
     setupChannel = guild.get_channel(setupChannelId)
     radioCategory = guild.get_channel(radioCategoryId)
@@ -59,10 +60,22 @@ async def freq(
         )
         return
 
+    if member.voice is None or member.voice.channel is None:
+        await interaction.response.send_message(
+            f"You need to be in `{setupChannel.name}` before using this command.",
+            ephemeral=True
+        )
+        return
+
+    if member.voice.channel.id != setupChannelId:
+        await interaction.response.send_message(
+            f"You need to be in `{setupChannel.name}` before using this command.",
+            ephemeral=True
+        )
+        return
+
     await interaction.response.send_message(
-        f"Config check passed.\n"
-        f"Setup channel: `{setupChannel.name}`\n"
-        f"Radio category: `{radioCategory.name}`\n"
+        f"Voice check passed. You are in `{setupChannel.name}`.\n"
         f"Action: `{action.value}`\n"
         f"Frequency: `{frequency}`",
         ephemeral=True
