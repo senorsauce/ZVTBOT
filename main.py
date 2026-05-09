@@ -28,6 +28,8 @@ if radioCategoryIdRaw is None:
 setupChannelId = int(setupChannelIdRaw)
 radioCategoryId = int(radioCategoryIdRaw)
 
+deleteDelaySeconds = 30
+
 
 # ----------------------------
 # Bot setup
@@ -62,7 +64,7 @@ def getRadioChannelName(frequency: str) -> str:
     partTwo = hashedFrequency[4:8]
     partThree = hashedFrequency[8:12]
 
-    return f"radiofreq-{partOne}-{partTwo}-{partThree}"
+    return f"cipher-{partOne}-{partTwo}-{partThree}"
 
 
 def isRadioChannel(channel: discord.abc.GuildChannel | None) -> bool:
@@ -72,7 +74,7 @@ def isRadioChannel(channel: discord.abc.GuildChannel | None) -> bool:
     if channel.category_id != radioCategoryId:
         return False
 
-    if not channel.name.startswith("radiofreq-"):
+    if not channel.name.startswith("cipher-"):
         return False
 
     return True
@@ -137,17 +139,36 @@ def cancelDeleteTask(channelId: int) -> None:
 
     if task is not None and not task.done():
         task.cancel()
+        print(f"Cancelled delete timer for channel ID: {channelId}")
 
 
-async def deleteChannelAfterDelay(channel: discord.VoiceChannel) -> None:
+async def deleteChannelAfterDelay(channelId: int, guildId: int) -> None:
     try:
-        await asyncio.sleep(30)
+        await asyncio.sleep(deleteDelaySeconds)
 
-        # Re-check after 30 seconds.
-        if len(channel.members) > 0:
+        guild = bot.get_guild(guildId)
+
+        if guild is None:
+            print(f"Could not find guild while deleting channel ID: {channelId}")
             return
 
-        await channel.delete(reason="Radio frequency empty for 30 seconds")
+        channel = guild.get_channel(channelId)
+
+        if channel is None:
+            return
+
+        if not isinstance(channel, discord.VoiceChannel):
+            return
+
+        if not isRadioChannel(channel):
+            return
+
+        # Re-check after 30 seconds in case someone joined again.
+        if len(channel.members) > 0:
+            print(f"Skipped delete because channel is no longer empty: {channel.name}")
+            return
+
+        await channel.delete(reason=f"Radio frequency empty for {deleteDelaySeconds} seconds")
         print(f"Deleted empty radio channel: {channel.name}")
 
     except asyncio.CancelledError:
@@ -157,13 +178,13 @@ async def deleteChannelAfterDelay(channel: discord.VoiceChannel) -> None:
         return
 
     except discord.Forbidden:
-        print(f"Missing permissions to delete channel: {channel.name}")
+        print(f"Missing permissions to delete channel ID: {channelId}")
 
     except Exception as error:
-        print(f"Failed to delete channel {channel.name}: {type(error).__name__}: {error}")
+        print(f"Failed to delete channel ID {channelId}: {type(error).__name__}: {error}")
 
     finally:
-        deleteTasks.pop(channel.id, None)
+        deleteTasks.pop(channelId, None)
 
 
 def scheduleDeleteIfEmpty(channel: discord.VoiceChannel) -> None:
@@ -173,7 +194,11 @@ def scheduleDeleteIfEmpty(channel: discord.VoiceChannel) -> None:
     if channel.id in deleteTasks:
         return
 
-    deleteTasks[channel.id] = asyncio.create_task(deleteChannelAfterDelay(channel))
+    print(f"Scheduling delete for empty radio channel: {channel.name}")
+
+    deleteTasks[channel.id] = asyncio.create_task(
+        deleteChannelAfterDelay(channel.id, channel.guild.id)
+    )
 
 
 # ----------------------------
@@ -203,13 +228,11 @@ async def on_ready():
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    # Someone joined or moved into a radio channel.
-    # Cancel pending deletion.
+    # If someone joins or moves into a radio channel, cancel its pending delete.
     if isRadioChannel(after.channel):
         cancelDeleteTask(after.channel.id)
 
-    # Someone left or moved out of a radio channel.
-    # If it is now empty, start the 30-second delete timer.
+    # If someone leaves or moves out of a radio channel, schedule deletion if empty.
     if isRadioChannel(before.channel):
         scheduleDeleteIfEmpty(before.channel)
 
@@ -279,15 +302,24 @@ async def freq(
 
         channelName = getRadioChannelName(cleanedFrequency)
 
-        radioChannel = await guild.create_voice_channel(
-            name=channelName,
-            category=radioCategory,
-            overwrites=getLockedOverwrites(guild, member),
-            reason=f"Radio frequency created by {member}"
-        )
+        try:
+            radioChannel = await guild.create_voice_channel(
+                name=channelName,
+                category=radioCategory,
+                overwrites=getLockedOverwrites(guild, member),
+                reason=f"Radio frequency created by {member}"
+            )
 
-        await member.move_to(radioChannel)
-        await interaction.followup.send("Created. Moving you.", ephemeral=True)
+            await member.move_to(radioChannel)
+            await interaction.followup.send("Created. Moving you.", ephemeral=True)
+
+        except discord.Forbidden:
+            await interaction.followup.send("Bot is missing permission.", ephemeral=True)
+
+        except Exception as error:
+            print(f"Create failed: {type(error).__name__}: {error}")
+            await interaction.followup.send("Create failed.", ephemeral=True)
+
         return
 
     if action.value == "join":
@@ -295,9 +327,18 @@ async def freq(
             await interaction.followup.send("Frequency not found.", ephemeral=True)
             return
 
-        await allowMemberIntoChannel(radioChannel, member)
-        await member.move_to(radioChannel)
-        await interaction.followup.send("Moving you.", ephemeral=True)
+        try:
+            await allowMemberIntoChannel(radioChannel, member)
+            await member.move_to(radioChannel)
+            await interaction.followup.send("Moving you.", ephemeral=True)
+
+        except discord.Forbidden:
+            await interaction.followup.send("Bot is missing permission.", ephemeral=True)
+
+        except Exception as error:
+            print(f"Join failed: {type(error).__name__}: {error}")
+            await interaction.followup.send("Join failed.", ephemeral=True)
+
         return
 
     await interaction.followup.send("Unknown action.", ephemeral=True)
