@@ -1,7 +1,6 @@
 import asyncio
 import os
 import re
-
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -10,7 +9,6 @@ from discord.ext import commands
 # ----------------------------
 # Environment config
 # ----------------------------
-
 token = os.getenv("DISCORD_TOKEN")
 setupChannelIdRaw = os.getenv("SETUP_CHANNEL_ID")
 radioCategoryIdRaw = os.getenv("RADIO_CATEGORY_ID")
@@ -33,7 +31,6 @@ deleteDelaySeconds = 30
 # ----------------------------
 # Bot setup
 # ----------------------------
-
 intents = discord.Intents.default()
 intents.voice_states = True
 
@@ -46,7 +43,6 @@ deleteTasks: dict[int, asyncio.Task] = {}
 # ----------------------------
 # Helpers
 # ----------------------------
-
 def cleanFrequency(frequency: str) -> str | None:
     frequency = frequency.strip().lower()
 
@@ -209,7 +205,6 @@ def scheduleDeleteIfEmpty(channel: discord.VoiceChannel) -> None:
 # ----------------------------
 # Events
 # ----------------------------
-
 @bot.event
 async def on_ready():
     global hasSyncedCommands
@@ -241,9 +236,8 @@ async def on_voice_state_update(member, before, after):
 
 
 # ----------------------------
-# Slash command
+# Slash command conversion
 # ----------------------------
-
 @bot.tree.command(name="freq", description="Create or join a radio frequency")
 @app_commands.describe(
     action="Create or join a frequency",
