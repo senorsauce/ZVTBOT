@@ -161,103 +161,114 @@ class RadioCog(commands.Cog):
     ) -> None:
         await interaction.response.defer(ephemeral=True)
 
-        guild = interaction.guild
-        member = interaction.user
+        try:
+            guild = interaction.guild
+            member = interaction.user
 
-        if guild is None:
-            await self.send_private(interaction, "Server only.")
-            return
+            print(f"freq invoked by member={getattr(member,'id',None)} guild={getattr(guild,'id',None)} action={getattr(action,'value',None)} frequency={frequency}")
 
-        if not isinstance(member, discord.Member):
-            await self.send_private(interaction, "Member info unavailable.")
-            return
-
-        setup_channel_id = self.get_setup_channel_id(guild)
-        radio_category_id = self.get_radio_category_id(guild)
-        setup_channel = guild.get_channel(setup_channel_id)
-        radio_category = guild.get_channel(radio_category_id)
-
-        if not isinstance(setup_channel, discord.VoiceChannel):
-            await self.send_private(interaction, "Setup channel misconfigured.")
-            return
-
-        if not isinstance(radio_category, discord.CategoryChannel):
-            await self.send_private(interaction, "Radio category misconfigured.")
-            return
-
-        if member.voice is None or member.voice.channel is None:
-            await self.send_private(interaction, f"Join `{setup_channel.name}` first.")
-            return
-
-        if member.voice.channel.id != setup_channel_id:
-            await self.send_private(interaction, f"Join `{setup_channel.name}` first.")
-            return
-
-        cleaned_frequency = self.clean_frequency(frequency)
-        if cleaned_frequency is None:
-            await self.send_private(interaction, "Invalid frequency.")
-            return
-
-        radio_channel = await self.find_radio_channel(radio_category, cleaned_frequency)
-
-        if action.value == "create":
-            if radio_channel is not None:
-                await self.send_private(interaction, "Frequency already exists.")
+            if guild is None:
+                await self.send_private(interaction, "Server only.")
                 return
 
-            if not self.bot_can_manage_channel(radio_category, guild):
-                await self.send_private(interaction, "Bot needs `Manage Channels` in the radio category.")
+            if not isinstance(member, discord.Member):
+                await self.send_private(interaction, "Member info unavailable.")
                 return
 
-            if not self.bot_can_move_members(setup_channel, guild):
-                await self.send_private(interaction, "Bot needs `Move Members` in the setup channel.")
+            setup_channel_id = self.get_setup_channel_id(guild)
+            radio_category_id = self.get_radio_category_id(guild)
+            setup_channel = guild.get_channel(setup_channel_id)
+            radio_category = guild.get_channel(radio_category_id)
+
+            if not isinstance(setup_channel, discord.VoiceChannel):
+                await self.send_private(interaction, "Setup channel misconfigured.")
                 return
 
-            channel_name = self.get_radio_channel_name(cleaned_frequency)
+            if not isinstance(radio_category, discord.CategoryChannel):
+                await self.send_private(interaction, "Radio category misconfigured.")
+                return
+
+            if member.voice is None or member.voice.channel is None:
+                await self.send_private(interaction, f"Join `{setup_channel.name}` first.")
+                return
+
+            if member.voice.channel.id != setup_channel_id:
+                await self.send_private(interaction, f"Join `{setup_channel.name}` first.")
+                return
+
+            cleaned_frequency = self.clean_frequency(frequency)
+            if cleaned_frequency is None:
+                await self.send_private(interaction, "Invalid frequency.")
+                return
+
+            radio_channel = await self.find_radio_channel(radio_category, cleaned_frequency)
+
+            if action.value == "create":
+                if radio_channel is not None:
+                    await self.send_private(interaction, "Frequency already exists.")
+                    return
+
+                if not self.bot_can_manage_channel(radio_category, guild):
+                    await self.send_private(interaction, "Bot needs `Manage Channels` in the radio category.")
+                    return
+
+                if not self.bot_can_move_members(setup_channel, guild):
+                    await self.send_private(interaction, "Bot needs `Move Members` in the setup channel.")
+                    return
+
+                channel_name = self.get_radio_channel_name(cleaned_frequency)
+                try:
+                    radio_channel = await guild.create_voice_channel(
+                        name=channel_name,
+                        category=radio_category,
+                        overwrites=self.get_locked_overwrites(guild, member),
+                        reason=f"Radio frequency created by {member}",
+                    )
+                    await member.move_to(radio_channel)
+                    await self.send_private(interaction, "Created. Moving you.")
+                    return
+                except discord.Forbidden:
+                    await self.send_private(interaction, "Bot lacks permission to create or move.")
+                    return
+                except Exception as error:
+                    print(f"Create failed: {type(error).__name__}: {error}")
+                    await self.send_private(interaction, "Create failed.")
+                    return
+
+            if action.value == "join":
+                if radio_channel is None:
+                    await self.send_private(interaction, "Frequency not found.")
+                    return
+
+                if not self.bot_can_manage_channel(radio_channel, guild):
+                    await self.send_private(interaction, "Bot needs `Manage Channels` for this frequency.")
+                    return
+
+                if not self.bot_can_move_members(setup_channel, guild):
+                    await self.send_private(interaction, "Bot needs `Move Members` in the setup channel.")
+                    return
+
+                try:
+                    await self.allow_member_into_channel(radio_channel, member)
+                    await member.move_to(radio_channel)
+                    await self.send_private(interaction, "Moving you.")
+                    return
+                except discord.Forbidden:
+                    await self.send_private(interaction, "Bot lacks permission to add you or move you.")
+                    return
+                except Exception as error:
+                    print(f"Join failed: {type(error).__name__}: {error}")
+                    await self.send_private(interaction, "Join failed.")
+                    return
+
+            await self.send_private(interaction, "Unknown action.")
+
+        except Exception as error:
+            print(f"Unhandled error in freq: {type(error).__name__}: {error}")
             try:
-                radio_channel = await guild.create_voice_channel(
-                    name=channel_name,
-                    category=radio_category,
-                    overwrites=self.get_locked_overwrites(guild, member),
-                    reason=f"Radio frequency created by {member}",
-                )
-                await member.move_to(radio_channel)
-                await self.send_private(interaction, "Created. Moving you.")
-                return
-            except discord.Forbidden:
-                await self.send_private(interaction, "Bot lacks permission to create or move.")
-                return
-            except Exception as error:
-                print(f"Create failed: {type(error).__name__}: {error}")
-                await self.send_private(interaction, "Create failed.")
-                return
-
-        if action.value == "join":
-            if radio_channel is None:
-                await self.send_private(interaction, "Frequency not found.")
-                return
-
-            if not self.bot_can_manage_channel(radio_channel, guild):
-                await self.send_private(interaction, "Bot needs `Manage Channels` for this frequency.")
-                return
-
-            if not self.bot_can_move_members(setup_channel, guild):
-                await self.send_private(interaction, "Bot needs `Move Members` in the setup channel.")
-                return
-
-            try:
-                await self.allow_member_into_channel(radio_channel, member)
-                await member.move_to(radio_channel)
-                await self.send_private(interaction, "Moving you.")
-                return
-            except discord.Forbidden:
-                await self.send_private(interaction, "Bot lacks permission to add you or move you.")
-                return
-            except Exception as error:
-                print(f"Join failed: {type(error).__name__}: {error}")
-                await self.send_private(interaction, "Join failed.")
-                return
-
-        await self.send_private(interaction, "Unknown action.")
+                await interaction.followup.send("Internal error occurred.", ephemeral=True)
+            except Exception:
+                pass
+            return
 
     # Command registration is handled by discord.py when the cog is added.
