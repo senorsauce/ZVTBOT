@@ -2,6 +2,7 @@ import asyncio
 import re
 import uuid
 import logging
+import json
 
 import discord
 from discord import app_commands
@@ -151,6 +152,46 @@ class RadioCog(commands.Cog):
         if self.is_radio_channel(before.channel):
             self.schedule_delete_if_empty(before.channel)
 
+    @app_commands.command(name="radio-diagnostics", description="Show radio config and permissions for this guild")
+    async def radio_diagnostics(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+
+        if guild is None:
+            await interaction.followup.send("This command must be used in a server.", ephemeral=True)
+            return
+
+        try:
+            setup_channel_id = self.get_setup_channel_id(guild)
+            radio_category_id = self.get_radio_category_id(guild)
+        except Exception as exc:
+            err_id = uuid.uuid4().hex[:8]
+            logger.exception("Diagnostics config lookup failed (id=%s) guild=%s: %s", err_id, getattr(guild, "id", None), exc)
+            await interaction.followup.send(f"Configuration error (ref: {err_id}).", ephemeral=True)
+            return
+
+        setup_channel = guild.get_channel(setup_channel_id)
+        radio_category = guild.get_channel(radio_category_id)
+
+        data = {
+            "guild_id": guild.id,
+            "setup_channel_id": setup_channel_id,
+            "setup_channel_exists": setup_channel is not None,
+            "radio_category_id": radio_category_id,
+            "radio_category_exists": radio_category is not None,
+            "bot_permissions_in_setup": None,
+        }
+
+        if setup_channel is not None:
+            perms = setup_channel.permissions_for(guild.me) if guild.me is not None else None
+            data["bot_permissions_in_setup"] = {
+                "manage_channels": bool(perms.manage_channels) if perms is not None else None,
+                "move_members": bool(perms.move_members) if perms is not None else None,
+            }
+
+        content = "Radio diagnostics:\n" + "```json\n" + json.dumps(data, indent=2) + "\n```"
+        await interaction.followup.send(content, ephemeral=True)
+
     @app_commands.command(name="freq", description="Create or join a radio frequency")
     @app_commands.describe(action="Create or join a frequency", frequency="The frequency")
     @app_commands.choices(action=[
@@ -185,8 +226,15 @@ class RadioCog(commands.Cog):
                 await self.send_private(interaction, "Member info unavailable.")
                 return
 
-            setup_channel_id = self.get_setup_channel_id(guild)
-            radio_category_id = self.get_radio_category_id(guild)
+            try:
+                setup_channel_id = self.get_setup_channel_id(guild)
+                radio_category_id = self.get_radio_category_id(guild)
+            except Exception as exc:
+                err_id = uuid.uuid4().hex[:8]
+                logger.exception("Config lookup failed (id=%s) guild=%s: %s", err_id, getattr(guild, "id", None), exc)
+                await interaction.followup.send(f"Configuration error (ref: {err_id}). Contact the bot owner.", ephemeral=True)
+                return
+
             setup_channel = guild.get_channel(setup_channel_id)
             radio_category = guild.get_channel(radio_category_id)
 
