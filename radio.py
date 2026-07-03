@@ -167,7 +167,12 @@ class RadioCog(commands.Cog):
         except Exception as exc:
             err_id = uuid.uuid4().hex[:8]
             logger.exception("Diagnostics config lookup failed (id=%s) guild=%s: %s", err_id, getattr(guild, "id", None), exc)
-            await interaction.followup.send(f"Configuration error (ref: {err_id}).", ephemeral=True)
+            await interaction.followup.send(
+                f"Configuration error (ref: {err_id}).\n"
+                f"Details: {exc}.\n"
+                "Check GUILD_CONFIGS and the guild ID mapping.",
+                ephemeral=True,
+            )
             return
 
         setup_channel = guild.get_channel(setup_channel_id)
@@ -232,7 +237,12 @@ class RadioCog(commands.Cog):
             except Exception as exc:
                 err_id = uuid.uuid4().hex[:8]
                 logger.exception("Config lookup failed (id=%s) guild=%s: %s", err_id, getattr(guild, "id", None), exc)
-                await interaction.followup.send(f"Configuration error (ref: {err_id}). Contact the bot owner.", ephemeral=True)
+                await interaction.followup.send(
+                    f"Configuration error (ref: {err_id}).\n"
+                    f"Details: {exc}.\n"
+                    "Please verify GUILD_CONFIGS contains this guild ID and both setup_channel_id and radio_category_id.",
+                    ephemeral=True,
+                )
                 return
 
             setup_channel = guild.get_channel(setup_channel_id)
