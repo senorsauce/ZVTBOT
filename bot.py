@@ -1,3 +1,4 @@
+import logging
 import discord
 from discord.ext import commands
 
@@ -5,6 +6,9 @@ from config import TOKEN, DELETE_DELAY_SECONDS
 from radio import RadioCog
 from moderation import ModerationCog
 from dayz import DayzCog
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger("ZVTBOT")
 
 
 intents = discord.Intents.default()

@@ -1,11 +1,15 @@
 import asyncio
 import re
+import uuid
+import logging
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from config import get_guild_config
+
+logger = logging.getLogger("ZVTBOT.radio")
 
 
 class RadioCog(commands.Cog):
@@ -165,7 +169,13 @@ class RadioCog(commands.Cog):
             guild = interaction.guild
             member = interaction.user
 
-            print(f"freq invoked by member={getattr(member,'id',None)} guild={getattr(guild,'id',None)} action={getattr(action,'value',None)} frequency={frequency}")
+            logger.info(
+                "freq invoked by member=%s guild=%s action=%s frequency=%s",
+                getattr(member, "id", None),
+                getattr(guild, "id", None),
+                getattr(action, "value", None),
+                frequency,
+            )
 
             if guild is None:
                 await self.send_private(interaction, "Server only.")
@@ -231,7 +241,7 @@ class RadioCog(commands.Cog):
                     await self.send_private(interaction, "Bot lacks permission to create or move.")
                     return
                 except Exception as error:
-                    print(f"Create failed: {type(error).__name__}: {error}")
+                    logger.exception("Create failed for guild=%s member=%s", getattr(guild, "id", None), getattr(member, "id", None))
                     await self.send_private(interaction, "Create failed.")
                     return
 
@@ -257,18 +267,23 @@ class RadioCog(commands.Cog):
                     await self.send_private(interaction, "Bot lacks permission to add you or move you.")
                     return
                 except Exception as error:
-                    print(f"Join failed: {type(error).__name__}: {error}")
+                    logger.exception("Join failed for guild=%s member=%s", getattr(guild, "id", None), getattr(member, "id", None))
                     await self.send_private(interaction, "Join failed.")
                     return
 
             await self.send_private(interaction, "Unknown action.")
 
         except Exception as error:
-            print(f"Unhandled error in freq: {type(error).__name__}: {error}")
+            err_id = uuid.uuid4().hex[:8]
+            logger.exception("Unhandled error in freq (id=%s) guild=%s member=%s action=%s frequency=%s", err_id, getattr(guild, "id", None), getattr(member, "id", None), getattr(action, "value", None), frequency)
             try:
-                await interaction.followup.send("Internal error occurred.", ephemeral=True)
+                await interaction.followup.send(f"Internal error occurred (ref: {err_id}).", ephemeral=True)
             except Exception:
-                pass
+                # If followup fails try the generic send
+                try:
+                    await interaction.response.send_message(f"Internal error occurred (ref: {err_id}).", ephemeral=True)
+                except Exception:
+                    pass
             return
 
     # Command registration is handled by discord.py when the cog is added.
