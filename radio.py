@@ -260,16 +260,4 @@ class RadioCog(commands.Cog):
 
         await self.send_private(interaction, "Unknown action.")
 
-    async def cog_load(self) -> None:
-        try:
-            self.bot.tree.add_command(self.freq)
-            print("Registered RadioCog app command: freq")
-        except Exception as error:
-            print(f"Failed to register RadioCog app command: {type(error).__name__}: {error}")
-
-    async def cog_unload(self) -> None:
-        try:
-            self.bot.tree.remove_command(self.freq.name)
-            print("Unregistered RadioCog app command: freq")
-        except Exception:
-            pass
+    # Command registration is handled by discord.py when the cog is added.

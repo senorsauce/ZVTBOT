@@ -31,7 +31,7 @@ async def on_ready() -> None:
 
 
 async def main() -> None:
-    await bot.add_cog(RadioCog(bot, DELETE_DELAY_SECONDS))
+    await bot.add_cog(RadioCog(bot, DELETE_DELAY_SECONDS), override=True)
     await bot.add_cog(ModerationCog(bot))
     await bot.add_cog(DayzCog(bot))
     await bot.start(TOKEN)
