@@ -17,10 +17,10 @@ class ModerationCog(commands.Cog):
         self.bot = bot
         self.data_path = Path(__file__).parent / "data" / "warning_points.json"
         self.data_path.parent.mkdir(parents=True, exist_ok=True)
-        self.banned_words = self._parse_words(os.getenv("BANNED_WORDS", ""))
-        self.warning_words = self._parse_words(os.getenv("WARNING_WORDS", ""))
-        self.timeout_minutes = int(os.getenv("MODERATION_TIMEOUT_MINUTES", "10"))
-        self.log_channel_id = os.getenv("MODERATION_LOG_CHANNEL_ID", "").strip()
+        self.banned_words = self._parse_words(os.getenv("BANNED_WORDS", "nigger, n1gger, n!gger, n!gg3r, n!gg3r, nig, nigga, n1gga, nigg4, n1gg4, faggot, fag, f4g, f4ggot, f4gg0t, retard, tard, r3tard, ret4rd, r3t4rd, gook"))
+        self.timeout_minutes = int(os.getenv("MODERATION_TIMEOUT_MINUTES", "5"))
+        self.log_guild_id = os.getenv("MODERATION_LOG_GUILD_ID", os.getenv("MODERATION_OUTPUT_GUILD_ID", "")).strip()
+        self.log_channel_id = os.getenv("MODERATION_LOG_CHANNEL_ID", os.getenv("MODERATION_OUTPUT_CHANNEL_ID", "")).strip()
         self.warning_points = self._load_warning_points()
 
     def _parse_words(self, raw_value: str) -> list[str]:
@@ -107,26 +107,45 @@ class ModerationCog(commands.Cog):
         normalized_content = content.lower()
         return bool(re.search(rf"\b{re.escape(keyword)}\b", normalized_content))
 
-    async def _send_log(self, guild: discord.Guild, member: discord.Member, keyword: str, total_points: int) -> None:
-        if not self.log_channel_id:
+    async def _send_log(
+        self,
+        guild: discord.Guild,
+        member: discord.Member,
+        keyword: str,
+        total_points: int,
+        message_content: str,
+    ) -> None:
+        target_guild = guild
+        target_channel_id = self.log_channel_id
+
+        if self.log_guild_id and self.log_channel_id:
+            try:
+                target_guild = self.bot.get_guild(int(self.log_guild_id))
+            except ValueError:
+                logger.warning("MODERATION_LOG_GUILD_ID is not a valid snowflake: %s", self.log_guild_id)
+                target_guild = None
+
+            if target_guild is not None:
+                target_channel_id = self.log_channel_id
+
+        if not target_channel_id:
             return
 
         try:
-            channel = guild.get_channel(int(self.log_channel_id))
+            channel = target_guild.get_channel(int(target_channel_id)) if target_guild else None
         except ValueError:
-            logger.warning("MODERATION_LOG_CHANNEL_ID is not a valid snowflake: %s", self.log_channel_id)
+            logger.warning("Moderation output channel ID is not a valid snowflake: %s", target_channel_id)
             return
 
         if not isinstance(channel, discord.TextChannel):
-            logger.warning("Moderation log channel %s is not a text channel", self.log_channel_id)
+            logger.warning("Moderation output channel %s is not a text channel", target_channel_id)
             return
 
         await channel.send(
-            f"User {member.mention} said `{keyword}`. Timeout and warning point issued.\n"
-            f"Total warning points: {total_points}."
+            f"User {member.display_name} has message {message_content} deleted. Message deleted and timeout issued."
         )
 
-    async def _warn_and_timeout(self, guild: discord.Guild, member: discord.Member, keyword: str) -> None:
+    async def _warn_and_timeout(self, guild: discord.Guild, member: discord.Member, keyword: str, message_content: str) -> None:
         total_points = self._increment_warning_points(guild.id, member.id)
 
         try:
@@ -137,13 +156,12 @@ class ModerationCog(commands.Cog):
 
         try:
             await member.send(
-                f"Your message contained a banned word (`{keyword}`), so it was removed and you received a warning point."
-                f"\nCurrent total warning points: {total_points}."
+                f"Your message {message_content} has been removed for containing inappropriate language."
             )
         except (discord.Forbidden, discord.HTTPException):
             logger.info("Could not send moderation DM to %s", member)
 
-        await self._send_log(guild, member, keyword, total_points)
+        await self._send_log(guild, member, keyword, total_points, message_content)
 
     @commands.Cog.listener()
     async def on_ready(self) -> None:
@@ -198,16 +216,6 @@ class ModerationCog(commands.Cog):
         if not isinstance(message.author, discord.Member):
             return
 
-        for keyword in self.warning_words:
-            if self._contains_keyword(content, keyword):
-                try:
-                    await message.delete()
-                except (discord.Forbidden, discord.NotFound, discord.HTTPException):
-                    logger.info("Could not delete message from %s for warning keyword %s", message.author, keyword)
-
-                await self._warn_and_timeout(message.guild, message.author, keyword)
-                return
-
         for keyword in self.banned_words:
             if self._contains_keyword(content, keyword):
                 try:
@@ -215,11 +223,5 @@ class ModerationCog(commands.Cog):
                 except (discord.Forbidden, discord.NotFound, discord.HTTPException):
                     logger.info("Could not delete message from %s for banned keyword %s", message.author, keyword)
 
-                try:
-                    await message.author.send(
-                        f"Your message contained a banned word (`{keyword}`), so it was removed."
-                    )
-                except (discord.Forbidden, discord.HTTPException):
-                    logger.info("Could not send banned-word DM to %s", message.author)
-
+                await self._warn_and_timeout(message.guild, message.author, keyword, content)
                 return
