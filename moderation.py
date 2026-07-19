@@ -107,9 +107,37 @@ class TicketingCog(commands.Cog):
         self.state_path = os.getenv("TICKET_STATE_PATH", "ticket_state.json")
         self.state = self._load_state()
         # optional global archive category id
-        self.global_archive_category = os.getenv("TICKET_ARCHIVE_CATEGORY_ID")
+        self.global_archive_category = self._parse_int_env("TICKET_ARCHIVE_CATEGORY_ID")
         # optional panel channel id (post the persistent panel there on_ready)
-        self.panel_channel_id = os.getenv("TICKET_PANEL_CHANNEL_ID")
+        self.panel_channel_id = self._parse_int_env("TICKET_PANEL_CHANNEL_ID")
+
+    def _parse_int_env(self, name: str) -> int | None:
+        raw = os.getenv(name)
+        if raw is None:
+            return None
+        try:
+            return int(raw)
+        except Exception:
+            return None
+
+    def _resolve_emoji(self, emoji_raw: str) -> str | None:
+        """Resolve a shortcode like :question: to a unicode emoji, or return the raw string if it's already an emoji."""
+        if not emoji_raw:
+            return None
+        emoji_raw = str(emoji_raw).strip()
+        # common shortcode mapping — extend as needed
+        mapping = {
+            ":question:": "❓",
+            ":white_check_mark:": "✅",
+            ":bug:": "🐛",
+            ":x:": "❌",
+            ":exclamation:": "❗",
+            ":grey_question:": "❔",
+        }
+        if emoji_raw in mapping:
+            return mapping[emoji_raw]
+        # If user provided <:name:id> or a unicode emoji, return as-is
+        return emoji_raw
 
     def _load_ticket_config(self) -> dict[str, Any]:
         raw = os.getenv("TICKET_CONFIG", "").strip()
@@ -119,7 +147,7 @@ class TicketingCog(commands.Cog):
                 "bug_report": {
                     "label": "Bug Report",
                     "description": "Report bugs to developers.",
-                    "emoji": "🪲",
+                    "emoji": ":bug:",
                     "prefix": "BR",
                     "category_id": None,
                     "role_ids": []
@@ -127,7 +155,7 @@ class TicketingCog(commands.Cog):
                 "whitelist": {
                     "label": "Whitelist",
                     "description": "Request whitelist access.",
-                    "emoji": "✅",
+                    "emoji": ":white_check_mark:",
                     "prefix": "WL",
                     "category_id": None,
                     "role_ids": []
@@ -141,6 +169,51 @@ class TicketingCog(commands.Cog):
 
         if not isinstance(parsed, dict):
             return {}
+
+        # normalize IDs and emoji shortcodes for each ticket type
+        for key, cfg in list(parsed.items()):
+            if not isinstance(cfg, dict):
+                continue
+            # normalize category ids
+            cat = cfg.get("category_id")
+            if cat is None:
+                cfg["category_id"] = None
+            else:
+                try:
+                    cfg["category_id"] = int(cat)
+                except Exception:
+                    cfg["category_id"] = None
+
+            # normalize archive category id per-type
+            a_cat = cfg.get("archive_category_id")
+            if a_cat is None:
+                cfg["archive_category_id"] = None
+            else:
+                try:
+                    cfg["archive_category_id"] = int(a_cat)
+                except Exception:
+                    cfg["archive_category_id"] = None
+
+            # normalize role ids to list of ints
+            roles = cfg.get("role_ids") or []
+            normalized_roles: list[int] = []
+            if isinstance(roles, list):
+                for r in roles:
+                    try:
+                        normalized_roles.append(int(r))
+                    except Exception:
+                        continue
+            elif isinstance(roles, (str, int)):
+                try:
+                    normalized_roles.append(int(roles))
+                except Exception:
+                    pass
+            cfg["role_ids"] = normalized_roles
+
+            # normalize emoji shortcodes — keep the raw but also store resolved emoji
+            emoji_raw = cfg.get("emoji")
+            cfg["emoji_raw"] = emoji_raw
+            cfg["emoji_resolved"] = self._resolve_emoji(emoji_raw)
 
         return parsed
 
@@ -171,7 +244,7 @@ class TicketingCog(commands.Cog):
         for key, cfg in self.ticket_config.items():
             label = cfg.get("label") or key
             desc = cfg.get("description", "")
-            emoji = cfg.get("emoji")
+            emoji = cfg.get("emoji_resolved") or cfg.get("emoji_raw") or cfg.get("emoji")
             options.append(discord.SelectOption(label=label, description=desc, emoji=emoji, value=key))
 
         if not options:
@@ -363,7 +436,7 @@ class TicketingCog(commands.Cog):
         for key, cfg in self.ticket_config.items():
             label = cfg.get("label") or key
             desc = cfg.get("description", "")
-            emoji = cfg.get("emoji")
+            emoji = cfg.get("emoji_resolved") or cfg.get("emoji_raw") or cfg.get("emoji")
             options.append(discord.SelectOption(label=label, description=desc, emoji=emoji, value=key))
 
         if not options:
