@@ -5,6 +5,9 @@ from announcement import AnnouncementCog, AnnouncementRoleSelect
 
 
 class AnnouncementTests(unittest.TestCase):
+    def test_slash_command_uses_correct_name(self):
+        self.assertEqual(AnnouncementCog.announcement.name, "announcement")
+
     def test_role_picker_requires_at_least_one_and_allows_multiple_roles(self):
         selector = AnnouncementRoleSelect(AnnouncementCog(None), "Update")
 

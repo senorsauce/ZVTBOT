@@ -77,7 +77,7 @@ class AnnouncementCog(commands.Cog):
         await channel.send(content, allowed_mentions=allowed_mentions)
         await interaction.response.send_message(f"Announcement posted in {channel.mention}.", ephemeral=True)
 
-    @app_commands.command(name="annoucement", description="Post an announcement and ping selected roles")
+    @app_commands.command(name="announcement", description="Post an announcement and ping selected roles")
     @app_commands.describe(text="Announcement message")
     @app_commands.checks.has_any_role("Management", "Owner")
     async def announcement(self, interaction: discord.Interaction, text: str) -> None:
