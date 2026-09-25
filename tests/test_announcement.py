@@ -1,26 +1,25 @@
 import unittest
 from types import SimpleNamespace
 
-from announcement import AnnouncementCog
+from announcement import AnnouncementCog, AnnouncementRoleSelect
 
 
 class AnnouncementTests(unittest.TestCase):
-    def test_resolves_role_mentions_and_ids(self):
-        role_one = SimpleNamespace(id=123, mention="<@&123>")
-        role_two = SimpleNamespace(id=456, mention="<@&456>")
-        guild = SimpleNamespace(get_role=lambda role_id: {123: role_one, 456: role_two}.get(role_id))
+    def test_role_picker_requires_at_least_one_and_allows_multiple_roles(self):
+        selector = AnnouncementRoleSelect(AnnouncementCog(None), "Update")
+
+        self.assertEqual(selector.min_values, 1)
+        self.assertEqual(selector.max_values, 25)
+
+    def test_builds_message_with_selected_role_mentions(self):
+        role_one = SimpleNamespace(mention="<@&123>")
+        role_two = SimpleNamespace(mention="<@&456>")
         cog = AnnouncementCog(None)
 
-        roles = cog._resolve_roles(guild, "<@&123>, 456 <@&123>")
-
-        self.assertEqual(roles, [role_one, role_two])
-
-    def test_rejects_unknown_or_malformed_roles(self):
-        guild = SimpleNamespace(get_role=lambda role_id: None)
-        cog = AnnouncementCog(None)
-
-        self.assertIsNone(cog._resolve_roles(guild, "<@&123>"))
-        self.assertIsNone(cog._resolve_roles(guild, "@everyone"))
+        self.assertEqual(
+            cog._build_content([role_one, role_two], "Update"),
+            "<@&123> <@&456>\nUpdate",
+        )
 
 
 if __name__ == "__main__":

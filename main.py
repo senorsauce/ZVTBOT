@@ -11,7 +11,7 @@ async def help_command(interaction: discord.Interaction) -> None:
         "/help — Show this help message.",
         "/freq <action> <frequency> — Create or join a radio frequency voice channel.",
         "/radio-diagnostics — Show radio configuration and permission details for this server.",
-        "/annoucement <roles> <text> — Post an announcement and ping selected roles (Management or Owner only).",
+        "/annoucement <text> — Choose roles to ping and post an announcement (Management or Owner only).",
         "/warnings <member> — Show a member's warning points (moderators only).",
         "/clear-warnings <member> — Clear a member's warning points (moderators only).",
     ]
